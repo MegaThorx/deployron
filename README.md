@@ -5,7 +5,7 @@ _Deployron_ is a small and lightweight deployment tool that is preferably used w
 It uses a _yaml_ configuration file that holds a single or multiple deploy scripts which can be executed with extended privileges in a secure way.
 
 ## Architecture
-![Architecture Image](http://i.imgur.com/zCq1YLQ.png)
+![Architecture Image](https://i.imgur.com/zCq1YLQ.png)
 
 ## Installation
 1. Download and extract the latest release into `/var/lib/deployron/`.
@@ -33,7 +33,11 @@ It uses a _yaml_ configuration file that holds a single or multiple deploy scrip
    chmod 755 /var/lib/deployron/api /var/lib/deployron/service
    ```
 
-4. Update `/var/lib/deployron/config.yml`.
+4. Create the configuration from the shipped example and adjust it:
+
+   ```bash
+   cp /var/lib/deployron/config.example.yml /var/lib/deployron/config.yml
+   ```
 
 5. Keep the configuration owned by root, but make it readable by the `deployron` group:
 
@@ -70,7 +74,7 @@ service:
 
 deployments:
 - name: mydeploy1 # name of the deployment entry (you can use any)
-  secret: deploy1secret # per deployment secret
+  secret: change-me-deploy1 # per deployment secret
   description: "My test deploy service 1" # friendly description (optional)
   user: root # the user who should execute the script below (optional, defaults to root)
   script: # The actual deploy script
@@ -78,13 +82,25 @@ deployments:
   - whoami
 
 - name: mydeploy2
-  secret: deploy2secret
+  secret: change-me-deploy2
   description: "My test deploy service 2"
-  user: vm
+  user: deploy
+  cron_deploy: "0 4 * * *" # additionally run this deployment on a cron schedule (optional)
   script:
   - echo "Hello World from mydeploy2"
   - whoami
 
 ```
 
-API clients use unnamed Unix sockets. The old `api.unixsocket` setting is accepted for compatibility but is ignored and can be removed.
+Deploy scripts run under `bash` with `set -euo pipefail`, so a deployment aborts as soon as any step fails. While a deployment is running, further triggers for the same deployment are skipped.
+
+## Usage
+Trigger a deployment with a `POST` request, passing the secret in the `X-API-Secret` header:
+
+```bash
+curl -X POST -H "X-API-Secret: change-me-deploy1" http://127.0.0.1:1337/deploy/mydeploy1
+```
+
+A `200` response means the deployment was handed off to the backend, not that it finished successfully — watch the backend service logs (`journalctl -u deployron.service`) for the outcome. Unknown deployment names and wrong secrets both return the same `404`, and repeated failed attempts from the same address are temporarily blocked with `429`.
+
+The secret must be sent in the `X-API-Secret` header; the old `?APISecret=` query parameter is no longer accepted, because query strings end up in access and proxy logs. If you expose the API beyond localhost, put it behind a TLS-terminating reverse proxy.

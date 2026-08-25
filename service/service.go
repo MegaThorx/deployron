@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"sync"
 	"syscall"
 
 	"github.com/MegaThorx/deployron/common"
@@ -15,6 +16,10 @@ import (
 )
 
 var config *common.Config
+
+// Tracks deployments that are currently executing so overlapping runs of the
+// same deployment (e.g. a slow script plus a fast cron schedule) are skipped.
+var runningDeployments sync.Map
 
 func main() {
 	if err := validateConfigFile("config.yml"); err != nil {
@@ -51,7 +56,7 @@ func main() {
 	for _, deployment := range config.Deployments {
 		if deployment.CronDeploy != "" {
 			if _, err := scheduler.AddFunc(deployment.CronDeploy, func() {
-				fmt.Println("[CRON] Launching '" + deployment.Name + "'")
+				log.Printf("[CRON] Launching %q", deployment.Name)
 				executeDeployScript(deployment.Name)
 			}); err != nil {
 				log.Fatalf("Invalid cron schedule for %q: %v", deployment.Name, err)
@@ -61,7 +66,7 @@ func main() {
 	scheduler.Start()
 	defer scheduler.Stop()
 
-	fmt.Println("Waiting for commands")
+	log.Println("Waiting for commands")
 
 	// Wait for commands
 	for {
@@ -101,14 +106,17 @@ func validateConfigFile(path string) error {
 func handleConnection(conn *net.UnixConn) error {
 	defer conn.Close()
 
-	var buf [256]byte
+	var buf [common.MessageSize]byte
 	if _, err := io.ReadFull(conn, buf[:]); err != nil {
 		return err
 	}
 
 	message := common.ReadMessage(buf)
-	processMessage(message)
-	fmt.Printf("Received command: %s\n", message.Identifier)
+	log.Printf("Received command: %s", message.Identifier)
+
+	// Process asynchronously so a long-running deployment does not block the
+	// accept loop.
+	go processMessage(message)
 
 	return nil
 }
@@ -117,6 +125,8 @@ func processMessage(message *common.Message) {
 	switch message.Identifier {
 	case "EXC_DEPLOY":
 		executeDeployScript(message.Parameter)
+	default:
+		log.Printf("Unknown command identifier %q", message.Identifier)
 	}
 }
 
@@ -124,11 +134,19 @@ func executeDeployScript(name string) {
 	deployment := config.FindDeploymentByName(name)
 
 	if deployment == nil {
-		fmt.Fprintf(os.Stderr, "Invalid deployment service name passed")
+		log.Printf("Invalid deployment name %q passed", name)
 		return
 	}
 
+	if _, alreadyRunning := runningDeployments.LoadOrStore(deployment.Name, struct{}{}); alreadyRunning {
+		log.Printf("Deployment %q is already running, skipping this run", deployment.Name)
+		return
+	}
+	defer runningDeployments.Delete(deployment.Name)
+
+	// Fail fast: abort the deployment as soon as any step fails.
 	var commandBuffer bytes.Buffer
+	commandBuffer.WriteString("set -euo pipefail; ")
 	for _, line := range deployment.Script {
 		commandBuffer.WriteString(line)
 		commandBuffer.WriteString("; ")
@@ -142,8 +160,7 @@ func executeDeployScript(name string) {
 	cmd.Stderr = os.Stderr
 
 	// Run deploy script
-	err := cmd.Run()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Executing the script failed: %s\n", err.Error())
+	if err := cmd.Run(); err != nil {
+		log.Printf("Deployment %q failed: %v", deployment.Name, err)
 	}
 }

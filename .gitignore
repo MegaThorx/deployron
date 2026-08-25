@@ -28,3 +28,7 @@ debug
 api/api
 service/service
 build/
+
+# Local runtime configuration (copy config.example.yml)
+config.yml
+*.sock

@@ -1,27 +1,48 @@
 package common
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
+
+// Messages are exchanged as fixed-size frames of MessageSize bytes:
+//
+//	bytes 0..9    identifier, null-padded
+//	byte  10      reserved, always zero
+//	bytes 11..255 parameter, null-padded
+const (
+	MessageSize         = 256
+	MaxIdentifierLength = 10
+	MaxParameterLength  = MessageSize - MaxIdentifierLength - 1
+)
 
 type Message struct {
 	Identifier string
 	Parameter  string
 }
 
-func ReadMessage(buf [256]byte) *Message {
+func ReadMessage(buf [MessageSize]byte) *Message {
 	var message Message
 
 	// Trim everything after \x00 (assuming both identifer and parameter are null-terminated strings)
-	message.Identifier = strings.TrimRight(string(buf[:10]), "\x00")
-	message.Parameter = strings.TrimRight(string(buf[11:]), "\x00")
+	message.Identifier = strings.TrimRight(string(buf[:MaxIdentifierLength]), "\x00")
+	message.Parameter = strings.TrimRight(string(buf[MaxIdentifierLength+1:]), "\x00")
 
 	return &message
 }
 
-func WriteMessage(message *Message) []byte {
-	var buf [256]byte
+func WriteMessage(message *Message) ([]byte, error) {
+	if len(message.Identifier) > MaxIdentifierLength {
+		return nil, fmt.Errorf("message identifier %q exceeds %d bytes", message.Identifier, MaxIdentifierLength)
+	}
+	if len(message.Parameter) > MaxParameterLength {
+		return nil, fmt.Errorf("message parameter exceeds %d bytes", MaxParameterLength)
+	}
 
-	copy(buf[:10], message.Identifier)
-	copy(buf[11:], message.Parameter)
+	var buf [MessageSize]byte
 
-	return buf[:]
+	copy(buf[:MaxIdentifierLength], message.Identifier)
+	copy(buf[MaxIdentifierLength+1:], message.Parameter)
+
+	return buf[:], nil
 }

@@ -7,7 +7,7 @@ service:
 
 deployments:
 - name: mydeploy1
-  secret: deploy1secret
+  secret: change-me-deploy1
   description: "My test deploy service 1"
   user: root
   script:
@@ -15,10 +15,10 @@ deployments:
   - whoami
 
 - name: mydeploy2
-  secret: deploy2secret
+  secret: change-me-deploy2
   description: "My test deploy service 2"
-  user: vm
-  cron_deploy: "@every 5s"
+  user: deploy
+  cron_deploy: "0 4 * * *"
   script:
   - echo "Hello World from mydeploy2"
   - whoami

@@ -35,10 +35,10 @@ jobs:
 
       - name: Package release artifact
         run: |
-          cp config.yml build/
+          cp config.example.yml build/
           cp -R systemd build/
           cd build
-          zip -r ../artifacts.zip api service config.yml systemd
+          zip -r ../artifacts.zip api service config.example.yml systemd
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v7
