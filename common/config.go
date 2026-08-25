@@ -13,8 +13,9 @@ type Deployment struct {
 
 type Config struct {
 	API struct {
-		IP         string `default:""`
-		Port       uint   `default:"1337"`
+		IP   string `default:""`
+		Port uint   `default:"1337"`
+		// Deprecated: API clients now use unnamed Unix sockets.
 		Unixsocket string `default:"./service_client.sock"`
 	}
 
@@ -25,13 +26,14 @@ type Config struct {
 	Deployments []Deployment `required:"true"`
 }
 
-func MakeConfig(path string) *Config {
+func MakeConfig(path string) (*Config, error) {
 	var config Config
 
-	// Read config
-	configor.Load(&config, path)
+	if err := configor.Load(&config, path); err != nil {
+		return nil, err
+	}
 
-	return &config
+	return &config, nil
 }
 
 func (config *Config) FindDeploymentByName(name string) *Deployment {

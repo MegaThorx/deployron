@@ -1,7 +1,6 @@
 api:
   ip: 127.0.0.1
   port: 1337
-  unixsocket: "./service_client.sock"
 
 service:
   unixsocket: "./service.sock"

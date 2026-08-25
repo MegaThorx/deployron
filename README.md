@@ -8,35 +8,55 @@ It uses a _yaml_ configuration file that holds a single or multiple deploy scrip
 ![Architecture Image](http://i.imgur.com/zCq1YLQ.png)
 
 ## Installation
-1. Download and extract the latest release from the release section. If you want to use it with _systemd_, make sure you extract the archive to `/var/lib/deployron/`.
-2. Update your `config.yml`
-3. Update `config.yml` permissions (otherwise the backend service will not start)
-  ```bash
-  # Only the owner should be able to access the file (use 644 for read privileges by others)
-  chmod 600 config.yml
+1. Download and extract the latest release into `/var/lib/deployron/`.
 
-  # Change user to root
-  chown root:root config.yml
-  ```
-4. Install the _systemd_ services (optional)
-  ```bash
-  # Copy service unit files
-  cp systemd/*.service /etc/systemd/system/
+2. Create the API system group and service account:
 
-  # Create user (hosts the API)
-  useradd -d /var/lib/deployron/ -M deployron
-  ```
+   ```bash
+   groupadd --system deployron
+   useradd --system --gid deployron --home-dir /var/lib/deployron --no-create-home deployron
+   ```
 
-5. Start and enable the systemd services (optional)
-  ```bash
-  # Start
-  systemctl start deployron.service
-  systemctl start deployron_api.service
+   If the `deployron` user already exists but the group does not, create the group and add the existing user to it:
 
-  # Enable (launch when booting)
-  systemctl enable deployron.service
-  systemctl enable deployron_api.service
-  ```
+   ```bash
+   groupadd --system deployron
+   usermod --append --groups deployron deployron
+   ```
+
+3. Protect the installation directory and executables. They must not be writable by the unprivileged API account because the backend runs deployment commands as root:
+
+   ```bash
+   chown root:deployron /var/lib/deployron
+   chmod 750 /var/lib/deployron
+   chown root:root /var/lib/deployron/api /var/lib/deployron/service
+   chmod 755 /var/lib/deployron/api /var/lib/deployron/service
+   ```
+
+4. Update `/var/lib/deployron/config.yml`.
+
+5. Keep the configuration owned by root, but make it readable by the `deployron` group:
+
+   ```bash
+   chown root:deployron /var/lib/deployron/config.yml
+   chmod 640 /var/lib/deployron/config.yml
+   ```
+
+   The backend requires root ownership because deployment commands can run with elevated privileges. Group-read access allows `deployron_api.service`, which runs as `deployron`, to load the same configuration.
+
+6. Install the _systemd_ services:
+
+   ```bash
+   cp /var/lib/deployron/systemd/*.service /etc/systemd/system/
+   systemctl daemon-reload
+   ```
+
+7. Start and enable the services:
+
+   ```bash
+   systemctl enable --now deployron.service
+   systemctl enable --now deployron_api.service
+   ```
 
 ## Configuration
 The following snippet is a commented example configuration.
@@ -44,7 +64,6 @@ The following snippet is a commented example configuration.
 api:
   ip: 127.0.0.1 # IP the server should listen on (use 0.0.0.0 to listen on all interfaces)
   port: 1337 # Port we're listening on (optional, defaults to 1337)
-  unixsocket: "./service_client.sock" # The unix client socket (optional)
 
 service:
   unixsocket: "./service.sock" # The unix backend process server socket (optional)
@@ -67,3 +86,5 @@ deployments:
   - whoami
 
 ```
+
+API clients use unnamed Unix sockets. The old `api.unixsocket` setting is accepted for compatibility but is ignored and can be removed.

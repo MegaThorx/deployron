@@ -5,6 +5,10 @@ Description=Deployron Backend Service
 Type=simple
 ExecStart=/var/lib/deployron/service
 WorkingDirectory=/var/lib/deployron
+User=root
+Group=deployron
+UMask=0007
+Restart=on-failure
 
 [Install]
 WantedBy=multi-user.target

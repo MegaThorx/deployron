@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"io"
+	"log"
 	"net"
 	"os"
 	"os/exec"
@@ -15,44 +17,49 @@ import (
 var config *common.Config
 
 func main() {
-	// Read config
-	config = common.MakeConfig("config.yml")
-
-	// Do some integrity checks
-	// Make sure config.yml is owned by root (as editing it would result in root privileges)
-	statInfo, err := os.Stat("config.yml")
-	if err != nil {
-		panic(err)
+	if err := validateConfigFile("config.yml"); err != nil {
+		log.Fatal(err)
 	}
-	if (statInfo.Mode()&0x1B) != 0 || statInfo.Sys().(*syscall.Stat_t).Uid != 0 { // 0x1B = ~0x1E4 = 774 base 8
-		panic("Make sure config.yml is owned by root and group and other don't have write permissions")
+
+	var err error
+	config, err = common.MakeConfig("config.yml")
+	if err != nil {
+		log.Fatalf("Could not load config.yml: %v", err)
 	}
 
 	// Remove old sockets (in case the service crashed)
-	os.Remove(config.Service.Unixsocket)
+	if err := os.Remove(config.Service.Unixsocket); err != nil && !os.IsNotExist(err) {
+		log.Fatalf("Could not remove stale service socket: %v", err)
+	}
 
 	// Start unix socket
 	l, err := net.ListenUnix("unix", &net.UnixAddr{Name: config.Service.Unixsocket, Net: "unix"})
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 	defer os.Remove(config.Service.Unixsocket)
+	defer l.Close()
 
-	// Update permissions
-	// TODO: Make this more fine-grained
-	os.Chmod(config.Service.Unixsocket, 0777)
+	// The backend runs with group deployron under systemd, so only root and the
+	// API service account can access the command socket.
+	if err := os.Chmod(config.Service.Unixsocket, 0o660); err != nil {
+		log.Fatalf("Could not set service socket permissions: %v", err)
+	}
 
 	// Register cron jobs
-	cron := cron.New()
+	scheduler := cron.New()
 	for _, deployment := range config.Deployments {
 		if deployment.CronDeploy != "" {
-			cron.AddFunc(deployment.CronDeploy, func() {
+			if _, err := scheduler.AddFunc(deployment.CronDeploy, func() {
 				fmt.Println("[CRON] Launching '" + deployment.Name + "'")
 				executeDeployScript(deployment.Name)
-			})
+			}); err != nil {
+				log.Fatalf("Invalid cron schedule for %q: %v", deployment.Name, err)
+			}
 		}
 	}
-	cron.Start()
+	scheduler.Start()
+	defer scheduler.Stop()
 
 	fmt.Println("Waiting for commands")
 
@@ -61,24 +68,49 @@ func main() {
 		// Accept incoming connection
 		conn, err := l.AcceptUnix()
 		if err != nil {
-			panic(err)
+			log.Printf("Could not accept service connection: %v", err)
+			continue
 		}
 
-		// Read from stream
-		var buf [256]byte
-		_, err = conn.Read(buf[:])
-		if err != nil {
-			panic(err)
+		if err := handleConnection(conn); err != nil {
+			log.Printf("Could not process service connection: %v", err)
 		}
-
-		// Parse message
-		message := common.ReadMessage(buf)
-		processMessage(message)
-
-		// Close connection
-		fmt.Printf("Received command: %s\n", message.Identifier)
-		conn.Close()
 	}
+}
+
+func validateConfigFile(path string) error {
+	statInfo, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("could not stat %s: %w", path, err)
+	}
+
+	stat, ok := statInfo.Sys().(*syscall.Stat_t)
+	if !ok {
+		return fmt.Errorf("could not inspect ownership of %s", path)
+	}
+
+	// Group read is allowed for deployron_api.service. Group write/execute and
+	// all access by others are rejected because the backend can run commands as root.
+	if stat.Uid != 0 || statInfo.Mode().Perm()&0o037 != 0 {
+		return fmt.Errorf("%s must be owned by root and have permissions 0640 or stricter", path)
+	}
+
+	return nil
+}
+
+func handleConnection(conn *net.UnixConn) error {
+	defer conn.Close()
+
+	var buf [256]byte
+	if _, err := io.ReadFull(conn, buf[:]); err != nil {
+		return err
+	}
+
+	message := common.ReadMessage(buf)
+	processMessage(message)
+	fmt.Printf("Received command: %s\n", message.Identifier)
+
+	return nil
 }
 
 func processMessage(message *common.Message) {

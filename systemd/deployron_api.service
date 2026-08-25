@@ -1,11 +1,15 @@
 [Unit]
 Description=Deployron API service
+Requires=deployron.service
+After=deployron.service
 
 [Service]
 Type=simple
 ExecStart=/var/lib/deployron/api
 WorkingDirectory=/var/lib/deployron
 User=deployron
+Group=deployron
+Restart=on-failure
 
 [Install]
 WantedBy=multi-user.target
