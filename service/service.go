@@ -8,8 +8,8 @@ import (
 	"os/exec"
 	"syscall"
 
-	"github.com/Jusonex/deployron/common"
-	"github.com/robfig/cron"
+	"github.com/MegaThorx/deployron/common"
+	"github.com/robfig/cron/v3"
 )
 
 var config *common.Config
@@ -32,7 +32,7 @@ func main() {
 	os.Remove(config.Service.Unixsocket)
 
 	// Start unix socket
-	l, err := net.ListenUnix("unix", &net.UnixAddr{config.Service.Unixsocket, "unix"})
+	l, err := net.ListenUnix("unix", &net.UnixAddr{Name: config.Service.Unixsocket, Net: "unix"})
 	if err != nil {
 		panic(err)
 	}

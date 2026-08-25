@@ -1,5 +1,5 @@
 # Deployron: A Lightweight Deploy Tool
-[![Build Status](https://travis-ci.org/Jusonex/deployron.svg?branch=master)](https://travis-ci.org/Jusonex/deployron)
+[![CI](https://github.com/MegaThorx/deployron/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/MegaThorx/deployron/actions/workflows/ci.yml)
 
 _Deployron_ is a small and lightweight deployment tool that is preferably used with Docker, but is suitable for most general purpose deployments as well.  
 It uses a _yaml_ configuration file that holds a single or multiple deploy scripts which can be executed with extended privileges in a secure way.

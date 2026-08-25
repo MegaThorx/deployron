@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/Jusonex/deployron/common"
+	"github.com/MegaThorx/deployron/common"
 	"github.com/gorilla/mux"
 )
 
@@ -58,7 +58,11 @@ func sendJSONError(res http.ResponseWriter, message string) {
 
 func sendMessageToService(identifier string, parameter string) {
 	// Connect to unix socket
-	serviceConn, err := net.DialUnix("unix", &net.UnixAddr{config.API.Unixsocket, "unix"}, &net.UnixAddr{config.Service.Unixsocket, "unix"})
+	serviceConn, err := net.DialUnix(
+		"unix",
+		&net.UnixAddr{Name: config.API.Unixsocket, Net: "unix"},
+		&net.UnixAddr{Name: config.Service.Unixsocket, Net: "unix"},
+	)
 	if err != nil {
 		panic(err)
 	}
