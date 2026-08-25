@@ -15,6 +15,10 @@ type Config struct {
 	API struct {
 		IP   string `default:""`
 		Port uint   `default:"1337"`
+		// IPs or CIDRs of reverse proxies whose X-Forwarded-For header is
+		// trusted for rate-limiting purposes. Empty (the default) disables
+		// X-Forwarded-For handling entirely.
+		TrustedProxies []string `yaml:"trusted_proxies"`
 		// Deprecated: API clients now use unnamed Unix sockets.
 		Unixsocket string `default:"./service_client.sock"`
 	}

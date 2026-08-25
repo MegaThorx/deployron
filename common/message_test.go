@@ -1,6 +1,7 @@
 package common
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 )
@@ -43,6 +44,32 @@ func TestMessageRoundTripMaxLengths(t *testing.T) {
 	}
 	if got.Parameter != parameter {
 		t.Errorf("Parameter = %q, want %q", got.Parameter, parameter)
+	}
+}
+
+func TestMessageReaderWriterRoundTrip(t *testing.T) {
+	var buf bytes.Buffer
+	sent := &Message{Identifier: "GET_STATUS", Parameter: "mydeploy1"}
+
+	if err := WriteMessageTo(&buf, sent); err != nil {
+		t.Fatalf("WriteMessageTo failed: %v", err)
+	}
+	if buf.Len() != MessageSize {
+		t.Fatalf("wrote %d bytes, want %d", buf.Len(), MessageSize)
+	}
+
+	got, err := ReadMessageFrom(&buf)
+	if err != nil {
+		t.Fatalf("ReadMessageFrom failed: %v", err)
+	}
+	if got.Identifier != sent.Identifier || got.Parameter != sent.Parameter {
+		t.Errorf("got %+v, want %+v", got, sent)
+	}
+}
+
+func TestReadMessageFromShortInput(t *testing.T) {
+	if _, err := ReadMessageFrom(strings.NewReader("too short")); err == nil {
+		t.Error("ReadMessageFrom accepted a truncated frame")
 	}
 }
 

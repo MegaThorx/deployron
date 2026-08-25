@@ -68,6 +68,9 @@ The following snippet is a commented example configuration.
 api:
   ip: 127.0.0.1 # IP the server should listen on (use 0.0.0.0 to listen on all interfaces)
   port: 1337 # Port we're listening on (optional, defaults to 1337)
+  # trusted_proxies: # reverse proxies whose X-Forwarded-For header is trusted for rate limiting (optional, default off)
+  # - 127.0.0.1
+  # - 10.0.0.0/8
 
 service:
   unixsocket: "./service.sock" # The unix backend process server socket (optional)
@@ -92,15 +95,32 @@ deployments:
 
 ```
 
-Deploy scripts run under `bash` with `set -euo pipefail`, so a deployment aborts as soon as any step fails. While a deployment is running, further triggers for the same deployment are skipped.
+Deploy scripts run under `bash` with `set -euo pipefail`, so a deployment aborts as soon as any step fails. When a trigger arrives while the same deployment is already running, exactly one follow-up run is queued; additional triggers during that time coalesce into it, so bursts never pile up but the latest trigger is never lost.
+
+Only set `trusted_proxies` when a reverse proxy is the sole route to the API and it overwrites or appends `X-Forwarded-For`; the throttle then rate-limits the forwarded client address instead of the proxy's.
 
 ## Usage
 Trigger a deployment with a `POST` request, passing the secret in the `X-API-Secret` header:
 
 ```bash
 curl -X POST -H "X-API-Secret: change-me-deploy1" http://127.0.0.1:1337/deploy/mydeploy1
+# {"run":42,"status":"queued"}
 ```
 
-A `200` response means the deployment was handed off to the backend, not that it finished successfully — watch the backend service logs (`journalctl -u deployron.service`) for the outcome. Unknown deployment names and wrong secrets both return the same `404`, and repeated failed attempts from the same address are temporarily blocked with `429`.
+A `200` here only means the deployment was handed off to the backend. For CI pipelines, add `wait=true` to block until the deployment finishes and get its outcome as the HTTP status — combined with `--fail`, curl exits non-zero and breaks the pipeline when the deploy script fails:
 
-The secret must be sent in the `X-API-Secret` header; the old `?APISecret=` query parameter is no longer accepted, because query strings end up in access and proxy logs. If you expose the API beyond localhost, put it behind a TLS-terminating reverse proxy.
+```bash
+curl --fail -X POST -H "X-API-Secret: change-me-deploy1" "http://127.0.0.1:1337/deploy/mydeploy1?wait=true"
+# {"duration_ms":5300,"run":42,"status":"success"}     (200 on success, 502 on failure, 504 after 15 min)
+```
+
+You can also inspect a deployment's last run at any time:
+
+```bash
+curl -H "X-API-Secret: change-me-deploy1" http://127.0.0.1:1337/deploy/mydeploy1/status
+# {"state":"idle","last":"success","last_run":42,"finished":1724600000,"dur_ms":5300}
+```
+
+Run status is kept in memory and resets when the backend service restarts. Unknown deployment names and wrong secrets both return the same `404`, and repeated failed attempts from the same address are temporarily blocked with `429`.
+
+The secret must be sent in the `X-API-Secret` header; the old `?APISecret=` query parameter is no longer accepted, because query strings end up in access and proxy logs. If you expose the API beyond localhost, put it behind a TLS-terminating reverse proxy (and see `trusted_proxies` above).

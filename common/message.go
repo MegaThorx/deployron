@@ -2,6 +2,7 @@ package common
 
 import (
 	"fmt"
+	"io"
 	"strings"
 )
 
@@ -45,4 +46,29 @@ func WriteMessage(message *Message) ([]byte, error) {
 	copy(buf[MaxIdentifierLength+1:], message.Parameter)
 
 	return buf[:], nil
+}
+
+func ReadMessageFrom(r io.Reader) (*Message, error) {
+	var buf [MessageSize]byte
+	if _, err := io.ReadFull(r, buf[:]); err != nil {
+		return nil, err
+	}
+	return ReadMessage(buf), nil
+}
+
+func WriteMessageTo(w io.Writer, message *Message) error {
+	payload, err := WriteMessage(message)
+	if err != nil {
+		return err
+	}
+
+	written, err := w.Write(payload)
+	if err != nil {
+		return err
+	}
+	if written != len(payload) {
+		return io.ErrShortWrite
+	}
+
+	return nil
 }

@@ -1,6 +1,10 @@
 api:
   ip: 127.0.0.1
   port: 1337
+  # Reverse proxies whose X-Forwarded-For header is trusted for rate limiting.
+  # Leave unset unless the API is only reachable through the proxy.
+  # trusted_proxies:
+  # - 127.0.0.1
 
 service:
   unixsocket: "./service.sock"
