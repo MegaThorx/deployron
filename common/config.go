@@ -19,8 +19,6 @@ type Config struct {
 		// trusted for rate-limiting purposes. Empty (the default) disables
 		// X-Forwarded-For handling entirely.
 		TrustedProxies []string `yaml:"trusted_proxies"`
-		// Deprecated: API clients now use unnamed Unix sockets.
-		Unixsocket string `default:"./service_client.sock"`
 	}
 
 	Service struct {
